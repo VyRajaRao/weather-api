@@ -1,5 +1,4 @@
-
-  :root{
+:root{
     --bg:#071022;
     --muted: rgba(200,220,255,0.6);
     --accent:#6ec1e4;
@@ -8,6 +7,196 @@
     color-scheme: dark;
     font-family: Inter, Poppins, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
   }
+
+  /* --- MOBILE-FIRST BASE STYLES --- */
+html, body {
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
+  font-size: 16px;
+  background: var(--bg);
+  color: #e9fbff;
+  font-family: Inter, Poppins, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+}
+
+.wrap {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  align-items: stretch;
+  justify-content: flex-start;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  border-radius: 16px;
+  background: var(--card-bg);
+  border: 1px solid rgba(255,255,255,0.04);
+  box-shadow: 0 8px 32px rgba(2,6,23,0.65);
+  padding: 12px;
+  margin: 0 auto;
+  gap: 14px;
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(10px) saturate(120%);
+}
+
+/* --- Responsive Grid for Tablet/Desktop --- */
+@media (min-width: 600px) {
+  .app {
+    flex-direction: row;
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    max-width: 900px;
+    gap: 18px;
+    padding: 18px;
+  }
+}
+
+@media (min-width: 1000px) {
+  .app {
+    max-width: 1150px;
+    grid-template-columns: 360px 1fr;
+  }
+}
+
+/* --- Responsive Left/Right Columns --- */
+.left, .right {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.left {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  border: 1px solid rgba(255,255,255,0.02);
+}
+
+.right {
+  padding: 12px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0.01));
+  border: 1px solid rgba(255,255,255,0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* --- Responsive Forecast Row --- */
+.forecast-row {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 6px 0;
+  flex-wrap: nowrap;
+}
+
+.day-card {
+  min-width: 100px;
+  max-width: 140px;
+  flex: 1 0 100px;
+  margin-right: 6px;
+}
+
+/* --- Responsive Stats Row --- */
+.stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+@media (min-width: 600px) {
+  .stats {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* --- Responsive Chart Area --- */
+.charts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+@media (min-width: 900px) {
+  .charts {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    align-items: start;
+    gap: 12px;
+  }
+}
+
+/* --- Responsive Scene --- */
+.scene {
+  width: 100%;
+  min-height: 220px;
+  height: 260px;
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.8s ease, color 0.5s ease;
+  border: 1px solid rgba(255,255,255,0.02);
+}
+@media (min-width: 600px) {
+  .scene {
+    height: 300px;
+  }
+}
+
+/* --- Responsive Weather Display Box --- */
+.temp-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px;
+}
+.big-temp {
+  font-size: 44px;
+}
+@media (min-width: 600px) {
+  .big-temp {
+    font-size: 56px;
+  }
+}
+
+/* --- Responsive Footer --- */
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 6px;
+}
+@media (min-width: 600px) {
+  .footer {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+}
+
+/* --- Touch-friendly Buttons --- */
+.btn, .geo, .unit-toggle {
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 16px;
+  touch-action: manipulation;
+}
+
+/* ...existing code... */
 
   html,body{height:100%;margin:0;background:
     radial-gradient(800px 400px at 10% 10%, #09243a 0%, transparent 20%),
