@@ -59,9 +59,20 @@ async function fetchForecast(q){
 
 /* UI update */
 function updateAll(data){
-  if(!data) return;
+  if(!data) {
+    console.error('No weather data received');
+    msg.textContent = 'No weather data received';
+    return;
+  }
+  
   const cur = data.current;
   const loc = data.location;
+  
+  if (!cur || !loc) {
+    console.error('Incomplete weather data received');
+    msg.textContent = 'Incomplete weather data received';
+    return;
+  }
 
   // place/time
   place.textContent = `${loc.name}${loc.region ? ', ' + loc.region : ''}, ${loc.country}`;
@@ -157,20 +168,51 @@ function mapAQIIndexToLabel(idx){
 
 /* Forecast cards */
 function renderForecastCards(days){
+  if (!days || days.length === 0) {
+    console.warn('No forecast days to render');
+    forecastRow.innerHTML = '<div class="day-card" style="opacity:0.6">No forecast data available</div>';
+    return;
+  }
+  
   forecastRow.innerHTML = '';
   days.forEach((d, i) => {
-    const date = new Date(d.date);
-    const name = i === 0 ? 'Today' : date.toLocaleDateString(undefined,{weekday:'short'});
-    const card = document.createElement('div');
-    card.className = 'day-card';
-    card.innerHTML = `<div class="date">${name}</div>
-                      <div style="font-weight:700">${Math.round(d.day.avgtemp_c)}°C</div>
-                      <div class="mini">${d.day.condition.text}</div>
-                      <div class="mini">${d.day.totalprecip_mm} mm</div>`;
-    card.addEventListener('click', ()=> { renderHourlyForDay(d); highlightSelectedCard(card); });
-    forecastRow.appendChild(card);
-    // auto-click first day
-    if(i === 0) card.click();
+    try {
+      const date = new Date(d.date);
+      const name = i === 0 ? 'Today' : date.toLocaleDateString(undefined,{weekday:'short'});
+      const card = document.createElement('div');
+      card.className = 'day-card';
+      
+      // Safely access temperature and condition data
+      const avgTemp = d.day?.avgtemp_c ? Math.round(d.day.avgtemp_c) : '--';
+      const condition = d.day?.condition?.text || 'Unknown';
+      const precipitation = d.day?.totalprecip_mm !== undefined ? d.day.totalprecip_mm : '--';
+      
+      card.innerHTML = `
+        <div class="date">${name}</div>
+        <div style="font-weight:700">${avgTemp}°C</div>
+        <div class="mini">${condition}</div>
+        <div class="mini">${precipitation} mm</div>
+      `;
+      
+      card.addEventListener('click', ()=> { 
+        renderHourlyForDay(d); 
+        highlightSelectedCard(card); 
+      });
+      
+      forecastRow.appendChild(card);
+      
+      // auto-click first day
+      if(i === 0) {
+        setTimeout(() => card.click(), 100);
+      }
+    } catch (error) {
+      console.error('Error rendering forecast card:', error);
+      const errorCard = document.createElement('div');
+      errorCard.className = 'day-card';
+      errorCard.style.opacity = '0.5';
+      errorCard.innerHTML = '<div class="date">Error</div><div class="mini">Data unavailable</div>';
+      forecastRow.appendChild(errorCard);
+    }
   });
 }
 function highlightSelectedCard(card){
@@ -178,25 +220,31 @@ function highlightSelectedCard(card){
   card.style.boxShadow = '0 10px 30px rgba(0,0,0,0.4)';
 }
 
-/* Choose animated scene */
+/* Choose animated scene with enhanced condition mapping */
 function chooseScene(current, forecastDays){
   const cond = (current.condition?.text || '').toLowerCase();
   const isNight = current.is_day === 0;
-
+  
+  // More comprehensive condition mapping
   // priority: thunder > rain > snow > fog > windy > cloudy > sunny/night
   if(cond.includes('thunder') || cond.includes('storm')) {
     setScene('thunder', current);
-  } else if(cond.includes('rain') || cond.includes('drizzle') || cond.includes('shower')) {
+  } else if(cond.includes('rain') || cond.includes('shower')) {
     setScene('rain', current);
-  } else if(cond.includes('snow') || cond.includes('sleet') || cond.includes('blizzard')) {
+  } else if(cond.includes('drizzle') || cond.includes('light rain')) {
+    setScene('rain', current); // Use rain scene for drizzle too
+  } else if(cond.includes('snow') || cond.includes('sleet') || cond.includes('blizzard') || cond.includes('flurr')) {
     setScene('snow', current);
-  } else if(cond.includes('mist') || cond.includes('fog') || cond.includes('haze')) {
+  } else if(cond.includes('mist') || cond.includes('fog') || cond.includes('haze') || cond.includes('smoke') || cond.includes('dust')) {
     setScene('fog', current);
-  } else if(cond.includes('wind') || cond.includes('breeze') || (current.wind_kph > 30)) {
+  } else if(cond.includes('wind') || cond.includes('breeze') || cond.includes('gust') || (current.wind_kph > 30)) {
     setScene('wind', current);
-  } else if(cond.includes('cloud') || cond.includes('overcast')) {
+  } else if(cond.includes('cloud') || cond.includes('overcast') || cond.includes('partly')) {
     setScene('cloudy', current);
+  } else if(cond.includes('clear') || cond.includes('sunny')) {
+    setScene(isNight ? 'night' : 'sunny', current);
   } else {
+    // Default based on time of day
     setScene(isNight ? 'night' : 'sunny', current);
   }
 }
@@ -207,7 +255,7 @@ function resetSceneImmediate(){
   // clear timers & elements
   activeTimers.forEach(t => clearInterval(t));
   activeTimers = [];
-  Array.from(scene.querySelectorAll('.raindrop, .splash, .snowflake, .gust, .sun-rays, .flash, .star')).forEach(n => n.remove());
+  Array.from(scene.querySelectorAll('.raindrop, .splash, .snowflake, .sun-rays, .flash, .star')).forEach(n => n.remove());
   // clear art
   art.innerHTML = '';
   scene.className = 'scene';
@@ -215,44 +263,137 @@ function resetSceneImmediate(){
 function setScene(name, current){
   resetSceneImmediate();
   scene.classList.add(name);
+  
+  // Set the weather icon with enhanced loading
   art.innerHTML = getSVGForScene(name);
+  
+  // Add icon-specific enhancements with delayed loading for smooth experience
+  setTimeout(() => {
+    const icon = art.querySelector('.weather-icon');
+    if(icon && icon.complete) {
+      // Add pulsing effect for sunny weather
+      if(name === 'sunny') {
+        icon.style.animation = 'icon-pulse 3.5s ease-in-out infinite';
+        icon.style.filter += ' brightness(1.1)';
+      }
+      // Add gentle sway for night
+      if(name === 'night') {
+        icon.style.animation = 'icon-sway 4.5s ease-in-out infinite';
+        icon.style.filter += ' hue-rotate(220deg) brightness(0.85)';
+      }
+      // Add shake effect for thunder with intensity
+      if(name === 'thunder') {
+        icon.style.animation = 'icon-shake 0.7s ease-in-out infinite';
+        icon.style.filter += ' contrast(1.2) brightness(1.1)';
+      }
+      // Add gentle bounce for rain/snow
+      if(name === 'rain') {
+        icon.style.animation = 'icon-bounce 2.2s ease-in-out infinite';
+        icon.style.filter += ' hue-rotate(10deg)';
+      }
+      if(name === 'snow') {
+        icon.style.animation = 'icon-bounce 2.8s ease-in-out infinite';
+        icon.style.filter += ' brightness(1.05)';
+      }
+      // Add subtle sway for cloudy
+      if(name === 'cloudy') {
+        icon.style.animation = 'icon-sway 5s ease-in-out infinite';
+        icon.style.filter += ' contrast(0.95)';
+      }
+      // Add gentle pulse for fog
+      if(name === 'fog') {
+        icon.style.animation = 'icon-pulse 4s ease-in-out infinite';
+        icon.style.filter += ' opacity(0.9) blur(0.5px)';
+      }
+    }
+  }, 100);
+  
+  // Spawn weather effects (wind effects removed for performance)
   if(name === 'rain') spawnRain();
   if(name === 'snow') spawnSnow();
-  if(name === 'wind') spawnWind();
   if(name === 'sunny') spawnSunRays();
   if(name === 'thunder') { spawnRain(); spawnThunder(); }
-  if(name === 'fog') spawnFog();
-  if(name === 'cloudy') spawnWind(true);
   if(name === 'night') spawnNightStars();
+  // Wind and fog effects removed to prevent lag
 }
 
-/* SVG art strings */
+/* Weather icon assets mapping and loading */
+function getWeatherIconPath(name) {
+  const iconMap = {
+    'sunny': 'assets/clear.svg',
+    'night': 'assets/clear.svg', // Use same as sunny but will apply night scene styling
+    'cloudy': 'assets/clouds.svg',
+    'rain': 'assets/rain.svg',
+    'thunder': 'assets/thunderstorm.svg',
+    'snow': 'assets/snow.svg',
+    'fog': 'assets/atmosphere.svg',
+    'wind': 'assets/atmosphere.svg' // atmosphere works well for wind
+  };
+  return iconMap[name] || 'assets/clear.svg';
+}
+
+/* Enhanced icon rendering with fallback support */
 function getSVGForScene(name){
-  if(name === 'sunny') return `
-    <svg viewBox="0 0 64 64" width="120" height="120" aria-hidden="true">
-      <defs><radialGradient id="sg"><stop offset="0" stop-color="#fff7d0"/><stop offset="1" stop-color="#ffd166"/></radialGradient></defs>
-      <circle cx="32" cy="28" r="14" fill="url(#sg)"/>
-      <g stroke="#ffd166" stroke-width="2" stroke-linecap="round">
-        <line x1="32" y1="2" x2="32" y2="14"/>
-        <line x1="32" y1="50" x2="32" y2="62"/>
-        <line x1="2" y1="28" x2="14" y2="28"/>
-        <line x1="50" y1="28" x2="62" y2="28"/>
-      </g>
-    </svg>`;
-  if(name === 'night') return `
-    <svg viewBox="0 0 64 64" width="120" height="120">
-      <circle cx="40" cy="24" r="12" fill="#f4f7ff" />
-      <path d="M48 20c0 11-9 20-20 20-1.6 0-3.2-.18-4.7-.51 6.6 5 16.1 5.4 22.7.3C55 36 56 28 56 28s.7-9-8-8z" fill="#071226" opacity="0.28"/>
-    </svg>`;
-  if(name === 'cloudy') return `
-    <svg viewBox="0 0 64 64" width="120" height="120"><ellipse cx="30" cy="36" rx="18" ry="10" fill="#ffffff" opacity="0.95"/><ellipse cx="42" cy="32" rx="12" ry="8" fill="#ffffff" opacity="0.95"/></svg>`;
-  if(name === 'rain' || name === 'thunder') return `
-    <svg viewBox="0 0 64 64" width="120" height="120"><ellipse cx="30" cy="30" rx="18" ry="10" fill="#ffffff" opacity="0.95"/><ellipse cx="42" cy="26" rx="12" ry="8" fill="#ffffff" opacity="0.95"/></svg>`;
-  if(name === 'snow') return `
-    <svg viewBox="0 0 64 64" width="120" height="120"><ellipse cx="32" cy="28" rx="18" ry="10" fill="#fff"/><g transform="translate(10,34)" fill="#eaf6ff"><circle cx="8" cy="12" r="2"/><circle cx="22" cy="16" r="2"/><circle cx="36" cy="12" r="2"/></g></svg>`;
-  if(name === 'fog') return `
-    <svg viewBox="0 0 64 64" width="120" height="120"><ellipse cx="32" cy="28" rx="18" ry="10" fill="#fff" opacity="0.9"/><rect x="8" y="40" width="48" height="4" rx="2" fill="#ffffff" opacity="0.14"/></svg>`;
-  return `<div style="font-size:12px;color:var(--muted)">--</div>`;
+  const iconPath = getWeatherIconPath(name);
+  const isPreloaded = preloadedIcons.get(iconPath);
+  
+  // Create an img element for the SVG asset with enhanced styling
+  const imgElement = `
+    <div class="icon-container" style="position: relative; display: inline-block;">
+      <img 
+        src="${iconPath}" 
+        alt="${name} weather icon"
+        class="weather-icon ${name}-icon"
+        style="
+          filter: drop-shadow(0 4px 12px rgba(0,0,0,0.25));
+          transition: all 0.8s ease;
+          max-width: 100%;
+          height: auto;
+          opacity: ${isPreloaded === false ? '0.8' : '1'};
+        "
+        onerror="handleIconError(this, '${name}')"
+        onload="this.style.opacity='1'; console.log('Icon loaded: ${name}');"
+        loading="${isPreloaded ? 'eager' : 'lazy'}"
+      />
+      <div class="fallback-icon" style="display: none;">
+        ${getFallbackIcon(name)}
+      </div>
+      <div class="loading-indicator" style="
+        display: ${isPreloaded === false ? 'flex' : 'none'};
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.1);
+        border-radius: 12px;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        color: var(--muted);
+        pointer-events: none;
+      ">
+        Loading...
+      </div>
+    </div>
+  `;
+  
+  return imgElement;
+}
+
+/* Fallback icons for when assets fail to load */
+function getFallbackIcon(name) {
+  const fallbacks = {
+    'sunny': '☀️',
+    'night': '🌙',
+    'cloudy': '☁️',
+    'rain': '🌧️',
+    'thunder': '⛈️',
+    'snow': '❄️',
+    'fog': '🌫️',
+    'wind': '💨'
+  };
+  return fallbacks[name] || '🌤️';
 }
 
 /* Animations: spawn raindrops, snowflakes, wind gusts, sun rays, thunder, fog, stars */
@@ -301,21 +442,7 @@ function createSnowflake(){
   scene.appendChild(s);
   setTimeout(()=> s.remove(), dur*1000 + 300);
 }
-function spawnWind(cloudy=false){
-  const lines = cloudy ? 4 : 6;
-  for(let i=0;i<lines;i++){
-    const g = document.createElement('div');
-    g.className = 'gust';
-    g.style.position='absolute'; g.style.left='-30%';
-    g.style.top = (10 + i*10 + Math.random()*40) + 'px';
-    g.style.width = (120 + Math.random()*260) + 'px'; g.style.opacity = (0.4 + Math.random()*0.5);
-    g.style.animation = `gust ${4 + Math.random()*2}s cubic-bezier(.2,.8,.2,.9) forwards`;
-    scene.appendChild(g);
-    setTimeout(()=> g.remove(), 4500);
-  }
-  const t = setInterval(()=> spawnWind(cloudy), 3800);
-  spawnTimers.push(t);
-}
+// Wind effects removed to prevent performance issues
 function spawnSunRays(){
   const rays = document.createElement('div');
   rays.className = 'sun-rays';
@@ -344,19 +471,7 @@ function createBolt(){
   bolt.style.position='absolute'; bolt.style.left = (30 + Math.random()*40)+'%'; bolt.style.top = (20 + Math.random()*30)+'%'; bolt.style.opacity='0.95';
   scene.appendChild(bolt); setTimeout(()=> bolt.remove(), 900);
 }
-function spawnFog(){
-  for(let i=0;i<3;i++){
-    const f = document.createElement('div');
-    f.style.position='absolute'; f.style.left='-10%'; f.style.width='120%'; f.style.height='40px';
-    f.style.top = (30 + i*36) + 'px'; f.style.background='linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.12), rgba(255,255,255,0.06))';
-    f.style.opacity = 0.55; f.style.filter = 'blur(6px)'; f.style.transform = `translateX(-40%)`; f.style.transition = 'transform 10s linear';
-    scene.appendChild(f);
-    setTimeout(()=> f.style.transform = 'translateX(20%)', 100);
-    setTimeout(()=> f.remove(), 11000);
-  }
-  const t = setInterval(()=> spawnFog(), 11000);
-  spawnTimers.push(t);
-}
+// Fog effects removed to prevent performance issues
 function spawnNightStars(){
   const count = 18;
   for(let i=0;i<count;i++){
@@ -381,9 +496,16 @@ function clearSpawnTimers(){
    Charts: hourly temperature & AQI
    ------------------------- */
 function buildHourlyAndAQICharts(data){
+  if (!data.forecast || !data.forecast.forecastday || data.forecast.forecastday.length === 0) {
+    console.warn('No forecast data available for charts');
+    msg.textContent = 'No forecast data available';
+    return;
+  }
+  
   // flatten next 24 hours from forecast data
   const next24 = [];
   const now = new Date(data.location.localtime);
+  
   // iterate forecastday's hours starting from current hour
   for(let day of data.forecast.forecastday){
     for(let h of day.hour){
@@ -391,9 +513,9 @@ function buildHourlyAndAQICharts(data){
       if(dt >= now && next24.length < 24) next24.push(h);
     }
   }
+  
   // fallback: ensure at least hours pulled
   if(next24.length < 8){
-    // add upcoming hours from first day just in case
     next24.length = 0;
     const flat = data.forecast.forecastday.flatMap(d=>d.hour);
     for(let h of flat.slice(0,24)) next24.push(h);
@@ -410,75 +532,236 @@ function buildHourlyAndAQICharts(data){
   const pm25 = next24.map(h => h.air_quality?.pm2_5 ?? null);
   const pm10 = next24.map(h => h.air_quality?.pm10 ?? null);
 
+  // Check if Chart.js is loaded
+  if (typeof Chart === 'undefined') {
+    console.error('Chart.js not loaded! Charts will not work.');
+    msg.textContent = 'Chart.js library not loaded - charts disabled';
+    return;
+  }
+  
   // destroy old charts if exist
   if(tempChart) tempChart.destroy();
   if(aqiChart) aqiChart.destroy();
 
-  const ctxTemp = el('tempChart').getContext('2d');
-  tempChart = new Chart(ctxTemp, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: 'Temp',
-          data: isCelsius ? tempsC : tempsF,
-          tension: 0.35,
-          borderWidth: 2,
-          pointRadius: 3,
-          fill: true,
-          backgroundColor: 'rgba(110,193,228,0.12)',
-          borderColor: 'rgba(110,193,228,0.95)',
-        }
-      ]
-    },
-    options: {
-      responsive:true,
-      plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false}},
-      scales:{
-        y:{
-          title:{display:true,text: isCelsius ? '°C' : '°F'}
+  const tempCanvas = el('tempChart');
+  const aqiCanvas = el('aqiChart');
+  
+  if (!tempCanvas || !aqiCanvas) {
+    console.error('Chart canvas elements not found!');
+    msg.textContent = 'Chart canvases not found in HTML';
+    return;
+  }
+  
+  const ctxTemp = tempCanvas.getContext('2d');
+  try {
+    tempChart = new Chart(ctxTemp, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Temperature',
+            data: isCelsius ? tempsC : tempsF,
+            tension: 0.35,
+            borderWidth: 2,
+            pointRadius: 3,
+            fill: true,
+            backgroundColor: 'rgba(110,193,228,0.12)',
+            borderColor: 'rgba(110,193,228,0.95)',
+          }
+        ]
+      },
+      options: {
+        responsive:true,
+        maintainAspectRatio: false,
+        plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false}},
+        scales:{
+          y:{
+            title:{display:true,text: isCelsius ? '°C' : '°F'},
+            beginAtZero: false
+          }
         }
       }
-    }
-  });
+    });
+  } catch (error) {
+    console.error('Error creating temperature chart:', error);
+    msg.textContent = 'Error creating temperature chart: ' + error.message;
+  }
 
-  const ctxAQI = el('aqiChart').getContext('2d');
+  // Create AQI chart with enhanced data processing
+  const ctxAQI = aqiCanvas.getContext('2d');
   const aqiDatasets = [];
-  // add PM2.5 if any non-null
-  if(pm25.some(v=>v!==null)){
+  
+  // Extract additional AQI data from the API response
+  const co = next24.map(h => h.air_quality?.co ?? null);
+  const no2 = next24.map(h => h.air_quality?.no2 ?? null);
+  const o3 = next24.map(h => h.air_quality?.o3 ?? null);
+  const so2 = next24.map(h => h.air_quality?.so2 ?? null);
+  
+  // Add PM2.5 dataset
+  if(pm25.some(v => v !== null && v > 0)){
     aqiDatasets.push({
       label:'PM2.5',
-      data: pm25.map(v=> v===null ? null : Math.round(v*10)/10),
-      borderColor:'#ff7a7a',
-      backgroundColor:'rgba(255,122,122,0.12)',
+      data: pm25.map(v => v === null || v === 0 ? null : Math.round(v * 10) / 10),
+      borderColor:'#ff6b6b',
+      backgroundColor:'rgba(255,107,107,0.1)',
       tension:0.3,
+      borderWidth: 2,
+      pointRadius: 1,
       spanGaps:true
     });
   }
-  if(pm10.some(v=>v!==null)){
+  
+  // Add PM10 dataset
+  if(pm10.some(v => v !== null && v > 0)){
     aqiDatasets.push({
       label:'PM10',
-      data: pm10.map(v=> v===null ? null : Math.round(v*10)/10),
-      borderColor:'#67c7ff',
-      backgroundColor:'rgba(103,199,255,0.12)',
+      data: pm10.map(v => v === null || v === 0 ? null : Math.round(v * 10) / 10),
+      borderColor:'#4ecdc4',
+      backgroundColor:'rgba(78,205,196,0.1)',
       tension:0.3,
+      borderWidth: 2,
+      pointRadius: 1,
+      spanGaps:true
+    });
+  }
+  
+  // Add CO dataset (convert to mg/m³)
+  if(co.some(v => v !== null && v > 0)){
+    aqiDatasets.push({
+      label:'CO (mg/m³)',
+      data: co.map(v => v === null || v === 0 ? null : Math.round(v * 100) / 100),
+      borderColor:'#feca57',
+      backgroundColor:'rgba(254,202,87,0.1)',
+      tension:0.3,
+      borderWidth: 2,
+      pointRadius: 1,
+      spanGaps:true
+    });
+  }
+  
+  // Add NO2 dataset
+  if(no2.some(v => v !== null && v > 0)){
+    aqiDatasets.push({
+      label:'NO2',
+      data: no2.map(v => v === null || v === 0 ? null : Math.round(v * 10) / 10),
+      borderColor:'#ff9ff3',
+      backgroundColor:'rgba(255,159,243,0.1)',
+      tension:0.3,
+      borderWidth: 2,
+      pointRadius: 1,
       spanGaps:true
     });
   }
 
-  aqiChart = new Chart(ctxAQI, {
-    type:'line',
-    data:{
-      labels,
-      datasets: aqiDatasets
-    },
-    options:{
-      responsive:true,
-      plugins:{legend:{display:true},tooltip:{mode:'index',intersect:false}},
-      scales:{ y:{ title:{display:true,text:'µg/m³'} } }
+  // Create AQI chart
+  if (aqiDatasets.length > 0) {
+    try {
+      aqiChart = new Chart(ctxAQI, {
+        type:'line',
+        data:{
+          labels,
+          datasets: aqiDatasets
+        },
+        options:{
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: 'index',
+            intersect: false
+          },
+          plugins:{
+            legend: {
+              display: true,
+              position: 'top',
+              labels: {
+                usePointStyle: true,
+                padding: 15
+              }
+            },
+            tooltip: {
+              mode: 'index',
+              intersect: false,
+              backgroundColor: 'rgba(0,0,0,0.8)',
+              titleColor: '#fff',
+              bodyColor: '#fff',
+              borderColor: 'rgba(255,255,255,0.1)',
+              borderWidth: 1
+            }
+          },
+          scales: {
+            x: {
+              grid: {
+                color: 'rgba(255,255,255,0.1)'
+              }
+            },
+            y: {
+              title: {
+                display: true,
+                text: 'Concentration (µg/m³)',
+                color: '#fff'
+              },
+              beginAtZero: true,
+              grid: {
+                color: 'rgba(255,255,255,0.1)'
+              }
+            }
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Error creating AQI chart:', error);
+      // Create a simple fallback chart
+      aqiChart = new Chart(ctxAQI, {
+        type:'line',
+        data:{
+          labels: ['No Data'],
+          datasets: [{
+            label: 'AQI Data Unavailable',
+            data: [0],
+            borderColor: '#666',
+            backgroundColor: 'rgba(102,102,102,0.1)'
+          }]
+        },
+        options:{
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: true } },
+          scales: { y: { beginAtZero: true } }
+        }
+      });
     }
-  });
+  } else {
+    // Create placeholder chart when no AQI data is available
+    aqiChart = new Chart(ctxAQI, {
+      type:'line',
+      data:{
+        labels: ['No AQI Data Available'],
+        datasets: [{
+          label: 'AQI data not provided for this location',
+          data: [0],
+          borderColor: '#555',
+          backgroundColor: 'rgba(85,85,85,0.1)',
+          pointRadius: 0
+        }]
+      },
+      options:{
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true },
+          tooltip: { enabled: false }
+        },
+        scales: {
+          y: {
+            title: { display: true, text: 'No Data' },
+            beginAtZero: true,
+            max: 10
+          }
+        }
+      }
+    });
+  }
 
   // update labels for UI
   selectedDayLabel.textContent = 'Next 24 hours';
@@ -561,7 +844,59 @@ el('unitToggle').addEventListener('click', ()=>{
   if(lastQuery) fetchForecast(lastQuery);
 });
 
-/* Initialize with a default */
+/* Preload weather icon assets for better performance */
+let preloadedIcons = new Map();
+function preloadWeatherIcons() {
+  const iconPaths = [
+    'assets/clear.svg',
+    'assets/clouds.svg', 
+    'assets/rain.svg',
+    'assets/thunderstorm.svg',
+    'assets/snow.svg',
+    'assets/atmosphere.svg',
+    'assets/drizzle.svg'
+  ];
+  
+  iconPaths.forEach(path => {
+    const img = new Image();
+    img.onload = () => {
+      preloadedIcons.set(path, true);
+      console.log(`✓ Preloaded: ${path}`);
+    };
+    img.onerror = () => {
+      preloadedIcons.set(path, false);
+      console.warn(`✗ Failed to preload: ${path}`);
+    };
+    img.src = path;
+  });
+}
+
+/* Enhanced error handling for weather icons */
+function handleIconError(iconElement, sceneName) {
+  console.warn(`Failed to load weather icon for scene: ${sceneName}`);
+  
+  // Hide the failed icon and show fallback
+  iconElement.style.display = 'none';
+  const fallback = iconElement.nextElementSibling;
+  if (fallback && fallback.classList.contains('fallback-icon')) {
+    fallback.style.display = 'flex';
+    // Add a subtle animation to indicate fallback is active
+    fallback.style.animation = 'fadeIn 0.5s ease-in';
+  }
+  
+  // Try to recover by retrying the load once
+  setTimeout(() => {
+    if (iconElement.src && !iconElement.complete) {
+      console.log(`Retrying icon load for: ${sceneName}`);
+      const originalSrc = iconElement.src;
+      iconElement.src = '';
+      iconElement.src = originalSrc;
+    }
+  }, 2000);
+}
+
+/* Initialize with a default and preload icons */
+preloadWeatherIcons();
 fetchForecast('London');
 
 /* Accessibility: respect reduced motion (already honored by CSS) */
