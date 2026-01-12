@@ -1,11 +1,4 @@
 
-/* -------------------------
-   Full Weather App Script
-   - Uses WeatherAPI forecast.json (days=5) with aqi=yes
-   - Requires network to call WeatherAPI
-   - Chart.js used for charts (loaded via CDN)
-   ------------------------- */
-
 const API_KEY = "8875f5efaa9141d8b56120913251708";
 const BASE_FORECAST = "https://api.weatherapi.com/v1/forecast.json";
 
@@ -91,8 +84,6 @@ function updateAll(data){
   pressure.innerHTML = `${cur.pressure_mb} mb`;
   uv.innerHTML = `${cur.uv}`;
 
-  // AQI (WeatherAPI uses components in current.air_quality)
-  // We'll show PM2.5 and PM10 where available, and overall "us-epa-index" if present
   const aqi = cur.air_quality || {};
   renderAQI(aqi);
 
@@ -110,7 +101,6 @@ function updateAll(data){
 function renderAQI(aqi) {
   aqiBox.innerHTML = '';
   aqiLegend.innerHTML = '';
-  // Preferred keys in WeatherAPI: "pm2_5", "pm10", "us-epa-index" maybe exist
   function addPill(text, color){
     const d = document.createElement('div');
     d.className = 'aqi-pill';
@@ -224,9 +214,7 @@ function highlightSelectedCard(card){
 function chooseScene(current, forecastDays){
   const cond = (current.condition?.text || '').toLowerCase();
   const isNight = current.is_day === 0;
-  
-  // More comprehensive condition mapping
-  // priority: thunder > rain > snow > fog > windy > cloudy > sunny/night
+   
   if(cond.includes('thunder') || cond.includes('storm')) {
     setScene('thunder', current);
   } else if(cond.includes('rain') || cond.includes('shower')) {
@@ -899,11 +887,6 @@ function handleIconError(iconElement, sceneName) {
 preloadWeatherIcons();
 fetchForecast('London');
 
-/* Accessibility: respect reduced motion (already honored by CSS) */
-
-/* -------------------------
-   Utility: remove spawn timers when navigating or on new scene
-   ------------------------- */
 function resetAllSceneTimers(){
   clearSpawnTimers();
   resetSceneImmediate();
